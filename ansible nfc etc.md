@@ -241,6 +241,7 @@ chronyc sources -v
 
 ```bash
 apt-get install openssh-server python3
+systemctl enable --now  sshd
 systemctl status sshd
 ```
 
