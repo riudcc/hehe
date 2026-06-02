@@ -5,14 +5,14 @@
 
 ## Содержание
 
-- [HQ-SRV — Файловое хранилище (RAID + NFS)](#hq-srv--файловое-хранилище-raid--nfs)
+- [HS — Файловое хранилище (RAID + NFS)](#hq-srv--файловое-хранилище-raid--nfs)
 - [ISP — Служба сетевого времени (Chrony)](#isp--служба-сетевого-времени-chrony)
-- [BR-SRV — Ansible](#br-srv--ansible)
-- [BR-SRV — Samba Domain Controller](#br-srv--samba-domain-controller)
-- [HQ-CLI — Ввод в домен](#hq-cli--ввод-в-домен)
+- [BS — Ansible](#br-srv--ansible)
+- [BS— Samba Domain Controller](#br-srv--samba-domain-controller)
+- [HC — Ввод в домен](#hq-cli--ввод-в-домен)
 ---
 
-## HQ-SRV — Файловое хранилище (RAID + NFS)
+## HS — Файловое хранилище (RAID + NFS)
 
 ### 1. Создание RAID-0
 
@@ -49,7 +49,7 @@ mkdir /raid/nfs
 echo "/raid/nfs 192.168.200.0/29(rw,no_subtree_check)" >> /etc/exports
 ```
 
-### 4. Настройка NFS-клиента (HQ-CLI)
+### 4. Настройка NFS-клиента (HC)
 
 ```bash
 apt-get install nfs-utils
@@ -97,7 +97,7 @@ chronyc sources -v
 
 ---
 
-## BR-SRV — Ansible
+## BS — Ansible
 
 ### 1. Подготовка управляемых узлов
 
@@ -109,7 +109,7 @@ systemctl enable --now  sshd
 systemctl status sshd
 ```
 
-### 2. Установка Ansible на BR-SRV
+### 2. Установка Ansible на BS
 
 ```bash
 apt-get install -y ansible-core sshpass
@@ -233,7 +233,7 @@ done
 
 ---
 
-## HQ-CLI — Ввод в домен
+## HC — Ввод в домен
 
 ### 1. Установка пакета
 
