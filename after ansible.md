@@ -5,20 +5,20 @@
 
 ## Содержание
 
-- [BR-SRV — Docker](#br-srv--docker)
-- [HQ-SRV — Веб-приложение (LAMP)](#hq-srv--веб-приложение-lamp)
+- [BS — Docker](#br-srv--docker)
+- [HS — Веб-приложение (LAMP)](#hq-srv--веб-приложение-lamp)
 - [Статическая трансляция портов (NAT)](#статическая-трансляция-портов-nat)
 - [ISP — Nginx как обратный прокси](#isp--nginx-как-обратный-прокси)
-- [HQ-CLI — Финальная настройка](#hq-cli--финальная-настройка)
+- [HC — Финальная настройка](#hq-cli--финальная-настройка)
 
 ---
 
-## BR-SRV — Docker
+## BS — Docker
 
 ### 1. Установка
 
 ```bash
-apt-get install docker-engine docker-compose
+apt-get install -y docker-engine docker-compose
 systemctl enable --now docker
 ```
 
@@ -34,16 +34,44 @@ ls /mnt/iso/docker/          # проверить наличие образов
 ### 3. Импорт Docker-образов
 
 ```bash
-docker load -i /mnt/iso/docker/site_latest.tar
-docker load -i /mnt/iso/docker/mariadb_latest.tar
+docker load < /mnt/iso/docker/site_latest.tar && \
+docker load < /mnt/iso/docker/mariadb_latest.tar 
 docker image ls              # убедиться, что образы загружены
 ```
 
 ### 4. Запуск контейнеров
 
 Создайте `docker-compose.yaml`, заполнив данные согласно `readme.txt` из ISO:
-
 ```bash
+services:
+  database:
+    container_name: db
+    image: mariadb:latest
+    restart: always
+    ports:
+      - "3306:3306"
+    environment:
+      DB_USER: maria
+      DB_PASS: Passw0rd
+      DB_NAME: mariadb
+      MARIADB_ROOT_PASSWORD: P@ssw0rd
+
+  app:
+    container_name: testapp
+    image: site:latest
+    restart: always
+    ports:
+      - "8080:8000"
+    environment:
+      DB_HOST: "192.168.0.2"
+      DB_PORT: "3306"
+      DB_NAME: mariadb
+      DB_USER: maria
+      DB_PASS: Passw0rd
+      DB_TYPE: maria
+    depends_on:
+      - database
+
 docker compose up -d
 ```
 
@@ -51,7 +79,7 @@ docker compose up -d
 
 ---
 
-## HQ-SRV — Веб-приложение (LAMP)
+## HS — Веб-приложение (LAMP)
 
 ### 1. Установка стека
 
@@ -61,7 +89,7 @@ systemctl enable --now mariadb
 systemctl enable --now httpd2
 ```
 
-> **Проверка:** с HQ-CLI убедиться, что веб-сервер отвечает по IP HQ-SRV.
+> **Проверка:** с HQ-CLI убедиться, что веб-сервер отвечает по IP HS.
 
 ### 2. Монтирование ISO и копирование файлов сайта
 
@@ -106,7 +134,7 @@ EXIT;
 mariadb -u webc -p webdb < /mnt/iso/web/dump.sql
 ```
 
-> **Проверка:** с HQ-CLI открыть браузер и перейти по IP HQ-SRV.
+> **Проверка:** с HC открыть браузер и перейти по IP HS.
 
 ---
 
@@ -119,7 +147,7 @@ mariadb -u webc -p webdb < /mnt/iso/web/dump.sql
 | HQ-RTR | `172.16.1.2:8080` | `192.168.100.2:80` | Веб-приложение HQ-SRV |
 | HQ-RTR | `172.16.1.2:2026` | `192.168.100.2:2026` | SSH → HQ-SRV |
 
-### BR-RTR
+### BR
 
 ```bash
 iptables -t nat -A PREROUTING -d 172.16.2.2 -p tcp --dport 8080 -j DNAT --to-destination 192.168.3.2:8080
@@ -127,7 +155,7 @@ iptables -t nat -A PREROUTING -d 172.16.2.2 -p tcp --dport 2026 -j DNAT --to-des
 iptables-save > /etc/sysconfig/iptables
 ```
 
-### HQ-RTR
+### HR
 
 ```bash
 iptables -t nat -A PREROUTING -d 172.16.1.2 -p tcp --dport 8080 -j DNAT --to-destination 192.168.100.2:80
@@ -214,7 +242,7 @@ systemctl enable --now nginx
 
 ---
 
-## HQ-CLI — Финальная настройка
+## HC — Финальная настройка
 
 ### Добавить записи в `/etc/hosts`
 
