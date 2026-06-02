@@ -240,7 +240,7 @@ chronyc sources -v
 На каждом устройстве из инвентаря:
 
 ```bash
-apt-get install openssh-server python3
+apt-get install -y openssh-server python3
 systemctl enable --now  sshd
 systemctl status sshd
 ```
@@ -248,7 +248,7 @@ systemctl status sshd
 ### 2. Установка Ansible на BR-SRV
 
 ```bash
-apt-get install ansible-core sshpass
+apt-get install -y ansible-core sshpass
 ```
 
 ### 3. Генерация и распространение SSH-ключа
