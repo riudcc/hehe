@@ -5,148 +5,11 @@
 
 ## Содержание
 
-- [BR-SRV — Samba Domain Controller](#br-srv--samba-domain-controller)
-- [HQ-CLI — Ввод в домен](#hq-cli--ввод-в-домен)
 - [HQ-SRV — Файловое хранилище (RAID + NFS)](#hq-srv--файловое-хранилище-raid--nfs)
 - [ISP — Служба сетевого времени (Chrony)](#isp--служба-сетевого-времени-chrony)
 - [BR-SRV — Ansible](#br-srv--ansible)
-
----
-
-## BR-SRV — Samba Domain Controller
-
-### 1. Очистка предыдущей конфигурации
-
-```bash
-rm -rf /run/samba/* /var/lib/samba/* /var/cache/samba/*
-mkdir -p /var/lib/samba/sysvol
-```
-
-### 2. Установка пакетов
-
-```bash
-apt-get install task-samba-dc
-```
-
-### 3. Проверка конфликтующих служб (должны быть **неактивны**)
-
-```bash
-systemctl status krb5kdc
-systemctl status slapd
-systemctl status bind
-```
-
-### 4. Резервирование старого конфига
-
-```bash
-mv /etc/samba/smb.conf{,.orig}
-```
-
-### 5. Настройка `/etc/resolv.conf`
-
-```
-search au-team.irpo
-nameserver 127.0.0.1
-```
-
-### 6. Провизионирование домена
-
-```bash
-samba-tool domain provision \
-  --server-role=dc \
-  --use-rfc2307 \
-  --dns-backend=SAMBA_INTERNAL \
-  --realm=AU-TEAM.IRPO \
-  --domain=AU-TEAM \
-  --adminpass=P@ssw0rd \
-  --option="interface=lo ens19"
-```
-
-### 7. Конфигурация Kerberos
-
-```bash
-cp /var/lib/samba/private/krb5.conf /etc/krb5.conf
-```
-
-### 8. Запуск Samba
-
-```bash
-systemctl enable --now samba
-systemctl restart samba
-```
-
-### 9. Проверка DNS
-
-```bash
-host -t SRV _kerberos._udp.au-team.irpo
-```
-
-### 10. Создание пользователей и группы
-
-```bash
-samba-tool group add hq
-samba-tool group list
-
-for i in {1..5}; do
-  samba-tool user add hquser$i P@ssw0rd
-  samba-tool group addmembers "hq" hquser$i
-done
-```
-
----
-
-## HQ-CLI — Ввод в домен
-
-### 1. Установка пакета
-
-```bash
-apt-get install task-auth-ad-sssd
-```
-
-### 2. DNS — указать BR-SRV в `/etc/resolv.conf`
-
-```bash
-host au-team.irpo   # ожидаемый ответ: 192.168.3.2
-```
-
-### 3. Ввод в домен
-
-Через графические настройки: указать домен `au-team.irpo`, рабочую группу `au-team`, имя ПК, пароль администратора домена.
-
-### 4. Проверка на BR-SRV
-
-```bash
-samba-tool computer list
-```
-
-### 5. Получение Kerberos-тикета
-
-```bash
-kinit hquser1@AU-TEAM.IRPO
-```
-
-### 6. Установка libnss-role и настройка sudo
-
-```bash
-apt-get install libnss-role
-
-# Связать доменную группу hq с локальной группой wheel
-roleadd hq wheel
-
-# Добавить разрешения в sudoers
-echo "%wheel ALL=(ALL:ALL) /bin/cat, /bin/grep, /usr/bin/id" \
-  >> /etc/sudoers.d/demo
-```
-
-### 7. Тестирование
-
-```bash
-exit && logout
-su - hquser1@AU-TEAM.IRPO
-sudo id                  # должен выполниться
-sudo apt-get update      # должен быть запрещён
-```
-
+- [BR-SRV — Samba Domain Controller](#br-srv--samba-domain-controller)
+- [HQ-CLI — Ввод в домен](#hq-cli--ввод-в-домен)
 ---
 
 ## HQ-SRV — Файловое хранилище (RAID + NFS)
@@ -154,6 +17,7 @@ sudo apt-get update      # должен быть запрещён
 ### 1. Создание RAID-0
 
 ```bash
+lsblk
 mdadm --create --level=0 --raid-devices=2 /dev/md/md0 /dev/sdb /dev/sdc
 mdadm --detail /dev/md/md0
 mdadm --detail --scan >> /etc/mdadm.conf
@@ -177,7 +41,7 @@ mount -a
 ### 3. Настройка NFS-сервера
 
 ```bash
-apt-get install nfs-server
+apt-get install -y nfs-server
 systemctl enable --now nfs
 mkdir /raid/nfs
 
@@ -257,52 +121,25 @@ apt-get install -y ansible-core sshpass
 ssh-keygen -t rsa
 
 # Передать ключ на каждое устройство
-ssh-copy-id -p 2026 sshuser@hq-srv.au-team.irpo
+ssh-copy-id -p 2026 sshuser@192.168.3.2
 ```
 
 ### 4. Файл инвентаря `/etc/ansible/hosts`
 
-```ini
-[srv]
-hq-srv.au-team.irpo
-
-[rtr]
-hq-rtr.au-team.irpo
-br-rtr.au-team.irpo
-
-[cli]
-hq-cli.au-team.irpo
-
-[srv:vars]
-ansible_user=sshuser
-ansible_password=P@ssw0rd
-ansible_port=2026
-
-[rtr:vars]
-ansible_user=net_admin
-ansible_password=P@ssw0rd
-ansible_port=22
-
-[cli:vars]
-ansible_user=user
-ansible_password=user
-ansible_port=22
-```
-
-Альтернативный формат (с явными IP):
+Формат (с явными IP):
 
 ```ini
-HQ-SRV  ansible_host=192.168.1.10  ansible_user=sshuser    ansible_password=P@ssw0rd  ansible_port=2026
-HQ-CLI  ansible_host=192.168.2.10  ansible_user=user       ansible_password=resu
-HQ-RTR  ansible_host=172.16.1.10   ansible_user=net_admin  ansible_password=P@ssw0rd  ansible_connection=network_cli  ansible_network_os=ios
-BR-RTR  ansible_host=172.16.2.10   ansible_user=net_admin  ansible_password=P@ssw0rd  ansible_connection=network_cli  ansible_network_os=ios
+HQ-SRV  ansible_host=192.168.100.2  ansible_user=sshuser    ansible_password=P@ssw0rd  ansible_port=2026
+HQ-CLI  ansible_host=192.168.200.2  ansible_user=user       ansible_password=user
+HQ-RTR  ansible_host=172.16.1.2   ansible_user=user  ansible_password=user 
+BR-RTR  ansible_host=172.16.2.2   ansible_user=user  ansible_password=user  
 ```
 
 ### 5. Конфигурация `/etc/ansible/ansible.cfg`
 
 ```ini
 [defaults]
-inventory        = /etc/ansible/hosts
+inventory = /etc/ansible/hosts
 host_key_checking = False
 ```
 
@@ -313,5 +150,137 @@ ansible -m ping all
 ```
 
 ---
+## BR-SRV — Samba Domain Controller
 
-*Документ сформирован для учебного стенда AU-TEAM.IRPO*
+### 1. Очистка предыдущей конфигурации
+
+```bash
+rm -rf /run/samba/* /var/lib/samba/* /var/cache/samba/*
+mkdir -p /var/lib/samba/sysvol
+```
+
+### 2. Установка пакетов
+
+```bash
+apt-get update
+apt-get install -y bind-utils task-samba-dc
+```
+
+### 3. Проверка конфликтующих служб (должны быть **неактивны**)
+
+```bash
+systemctl status krb5kdc
+systemctl status slapd
+systemctl status bind
+```
+
+### 4. Резервирование старого конфига
+
+```bash
+mv /etc/samba/smb.conf{,.orig}
+```
+
+### 5. Настройка `/etc/resolv.conf`
+
+```
+search au-team.irpo
+nameserver 127.0.0.1
+```
+
+### 6. Провизионирование домена
+
+```bash
+samba-tool domain provision \
+  --server-role=dc \
+  --use-rfc2307 \
+  --dns-backend=SAMBA_INTERNAL \
+  --realm=AU-TEAM.IRPO \
+  --domain=AU-TEAM \
+  --adminpass=P@ssw0rd \
+  --option="interfaces=ens18"
+```
+
+### 7. Конфигурация Kerberos
+
+```bash
+cp /var/lib/samba/private/krb5.conf /etc/krb5.conf
+```
+
+### 8. Запуск Samba
+
+```bash
+systemctl enable --now samba
+systemctl restart samba
+```
+
+### 9. Проверка DNS
+
+```bash
+host -t SRV _kerberos._udp.au-team.irpo
+```
+
+### 10. Создание пользователей и группы
+
+```bash
+samba-tool group add hq
+samba-tool group list
+
+for i in {1..5}; do
+  samba-tool user add hquser$i P@ssw0rd
+  samba-tool group addmembers "hq" hquser$i
+done
+```
+
+---
+
+## HQ-CLI — Ввод в домен
+
+### 1. Установка пакета
+
+```bash
+qapt-get update
+apt-get install -y task-auth-ad-sssd libnss-role krb5-kinit
+```
+
+### 2. DNS — указать BR-SRV в `/etc/resolv.conf`
+
+```bash
+host au-team.irpo   # ожидаемый ответ: 192.168.3.2
+```
+
+### 3. Ввод в домен
+
+Через графические настройки: указать домен `au-team.irpo`, рабочую группу `au-team`, имя ПК, пароль администратора домена.
+
+### 4. Проверка на BR-SRV
+
+```bash
+samba-tool computer list
+```
+
+### 5. Получение Kerberos-тикета
+
+```bash
+kinit hquser1@AU-TEAM.IRPO
+```
+
+### 6. Настройка sudo
+
+```bash
+
+# Связать доменную группу hq с локальной группой wheel
+roleadd hq wheel
+
+# Добавить разрешения в sudoers
+echo "%wheel ALL=(ALL:ALL) /bin/cat, /bin/grep, /usr/bin/id" \
+  >> /etc/sudoers.d/demo
+```
+
+### 7. Тестирование
+
+```bash
+exit && logout
+su - hquser1@AU-TEAM.IRPO
+sudo id                  # должен выполниться
+sudo apt-get update      # должен быть запрещён
+```
